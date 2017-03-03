@@ -1,0 +1,33 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+configure:563: checking for Tcl configuration
+configure:656: checking Tcl build library
+configure:660: checking for Tcl_CreateCommand
+configure:688: cc -o conftest    conftest.c -L/home/icn-1/workspace/fdalb-ns2/tcl8.4.18/unix -ltcl8.4 -ldl  -lieee -lm 1>&5
+configure:704: checking if Tcl library build specification is valid
+configure:731: checking for gcc
+configure:844: checking whether the C compiler (gcc  ) works
+configure:860: gcc -o conftest    conftest.c  1>&5
+configure:886: checking whether the C compiler (gcc  ) is a cross-compiler
+configure:891: checking whether we are using GNU C
+configure:900: gcc -E conftest.c
+configure:919: checking whether gcc accepts -g
+configure:952: checking whether the compiler (gcc) actually works
+configure:961: gcc -c -g -O2  conftest.c 1>&5
+configure:980: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1033: checking for a BSD compatible install
+configure:1090: checking for ranlib
+configure:1127: checking how to run the C preprocessor
+configure:1148: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1208: checking if running LynxOS
+configure:1294: checking for Tcl private headers
+configure:1436: checking if we are running Linux
+configure:1451: checking for strchr
+configure:1479: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1463:6: warning: conflicting types for built-in function 'strchr' [enabled by default]
+ char strchr();
+      ^
+configure:1507: checking for stdlib.h
+configure:1517: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1566: checking type of library to build
