@@ -27,8 +27,8 @@ struct hdr_tcp {
   int DSAB_type_;
   int DSAB_SYN_FIN_;
 
-	//liu: added for CRLB
-	int probe_mode_; /*a probe is marked with isProbe set 1, otherwise is 0*/
+//	//liu: added for CRLB
+//	int probe_mode_; /*a probe is marked with isProbe set 1, otherwise is 0*/
 
   double DSAB_wnd_;
   double DSAB_wndApply_;
@@ -55,7 +55,7 @@ struct hdr_tcp {
 
   double& rwnd() { return (rwnd_); } //added by zhj for LTPB
   int & dsab_type() { return (DSAB_type_); }//ws: added for DSAB
-	int & probe_mode() {return (probe_mode_); }//liu: added for CRLB
+//	int & probe_mode() {return (probe_mode_); }//liu: added for CRLB
 };
 //ws: added for DSAB
 #define DSAB_R_W 0x07
@@ -466,7 +466,7 @@ virtual void output(int seqno, int reason = 0);
   double wndBase_; //w(n)
   double rateOld_;
 
-	int isProbe_; // liu: added for CRLB
+//	int isProbe_; // liu: added for CRLB
 
 	void update_ecnhat_alpha(Packet *pkt); /* updates the ecnhat alpha value */
 

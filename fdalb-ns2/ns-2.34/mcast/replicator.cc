@@ -79,6 +79,7 @@ void Replicator::recv(Packet* p, Handler*)
 	hdr_ip* iph = hdr_ip::access(p);
 	hdr_cmn* ch = hdr_cmn::access(p);
 	hdr_tcp* itcp = hdr_tcp::access(p);
+	printf("replicator is used\n");
 	if (maxslot_ < 0) {
 		if (!ignore_) 
 			Tcl::instance().evalf("%s drop %ld %ld %d", name(), 
@@ -100,13 +101,18 @@ void Replicator::recv(Packet* p, Handler*)
 			ch->direction() = hdr_cmn::UP; // Up the stack 
 		}
 	}
+
 	for (int i = 0; i < maxslot_; ++i) {
 		NsObject* o = slot_[i];
-		if (o != 0)
+		if (o != 0){
+			printf("%d:%s\n",nid_,o->name());
 			o->recv(p->copy());
+		}
 	}
 	/* we know that maxslot is non-null */
 	slot_[maxslot_]->recv(p);
+	printf("%d:%s\n",nid_,slot_[maxslot_]->name());
+	//printf("data");
 }
 
 int Replicator::command(int argc, const char*const* argv)

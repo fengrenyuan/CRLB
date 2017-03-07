@@ -32,7 +32,7 @@ public:
 	}
 } class_tcp;
 
-TcpAgent::TcpAgent() 
+TcpAgent::TcpAgent()
 	: Agent(PT_TCP), 
 	  t_seqno_(0), dupacks_(0), curseq_(0), highest_ack_(0), 
           cwnd_(0), ssthresh_(0), maxseq_(0), count_(0), 
@@ -45,8 +45,7 @@ TcpAgent::TcpAgent()
           use_rtt_(0), qs_requested_(0), qs_approved_(0),
 	  qs_window_(0), qs_cwnd_(0), frto_(0), ecnhat_recalc_seq(0), ecnhat_num_marked(0),ecnhat_total(0),
 	  ecnhat_maxseq(0), ecnhat_not_marked(0), ecnhat_mark_period(0), target_wnd(0) , ecnhat_tcp_friendly_increase_(1.0),rwnd_(0),
-    DSAB_FIN(0),SAB_state_(0),DSAB_SYN_FIN_(0),DSAB_deadline_(-1),wndApply_(-1),wndBase_(0),
-		isProbe_(0)
+    DSAB_FIN(0),SAB_state_(0),DSAB_SYN_FIN_(0),DSAB_deadline_(-1),wndApply_(-1),wndBase_(0)
 {
 #ifdef TCP_DELAY_BIND_ALL
         // defined since Dec 1999.
@@ -89,8 +88,8 @@ TcpAgent::TcpAgent()
   //ws: added for SAB
   bind("enable_SAB_", &enable_SAB_);
 
-	//liu: added for CRLB
-	bind("isProbe_", &isProbe_);
+//	//liu: added for CRLB
+//	bind("isProbe_", &isProbe_);
 #endif /* TCP_DELAY_BIND_ALL */
 
 }
@@ -130,8 +129,8 @@ TcpAgent::delay_bind_init_all()
   //ws: added for SAB
   delay_bind_init_one("enable_SAB_");
 
-	//liu: added for CRLB
-	delay_bind_init_one("isProbe_");
+//	//liu: added for CRLB
+//	delay_bind_init_one("isProbe_");
 
         delay_bind_init_one("SetCWRonRetransmit_");
         delay_bind_init_one("old_ecn_");
@@ -262,8 +261,8 @@ TcpAgent::delay_bind_dispatch(const char *varName, const char *localName, TclObj
   //ws: added for SAB
   if (delay_bind_bool(varName,localName,"enable_SAB_",&enable_SAB_,tracer))return TCL_OK;
 
-	//liu: added for CRLB
-	if (delay_bind_bool(varName,localName,"isProbe_",&isProbe_,tracer)) return TCL_OK;
+//	//liu: added for CRLB
+//	if (delay_bind_bool(varName,localName,"isProbe_",&isProbe_,tracer)) return TCL_OK;
 
 	if (delay_bind_bool(varName, localName, "SetCWRonRetransmit_", &SetCWRonRetransmit_, tracer)) return TCL_OK;
         if (delay_bind_bool(varName, localName, "old_ecn_", &old_ecn_ , tracer)) return TCL_OK;
@@ -930,10 +929,10 @@ int TcpAgent::command(int argc, const char*const* argv)
 			printf("deadline%f\n",this->d2tcp_deadline_);
 			return (TCL_OK);
 		}
-		if (strcmp(argv[1], "setProbe") == 0) {
-			this->isProbe_ = atoi(argv[2]);
-			return (TCL_OK);
-		}
+//		if (strcmp(argv[1], "setProbe") == 0) {
+//			this->isProbe_ = atoi(argv[2]);
+//			return (TCL_OK);
+//		}
 		if (strcmp(argv[1], "persist") == 0) {
 			TcpAgent *other
 			  = (TcpAgent*)TclObject::lookup(argv[2]);

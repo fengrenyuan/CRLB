@@ -120,11 +120,12 @@ int MCastClassifier::classify(Packet *pkt)
 	nsaddr_t src = ih->saddr();
 	nsaddr_t dst = ih->daddr();
 
+	printf("mcast is used\n");
 	int iface = h->iface();
 	Tcl& tcl = Tcl::instance();
 
 	hashnode* p = lookup(src, dst, iface);
-	//printf("%s, src %d, dst %d, iface %d, p %d\n", name(), src, dst, iface, p);
+	printf("%s, src %d, dst %d, iface %d, p %d\n", name(), src, dst, iface, p);
  	if (p == 0)
  	        p = lookup_star(dst, iface);
 		

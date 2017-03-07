@@ -569,6 +569,12 @@ enum ModulationScheme {BPSK = 0, QPSK = 1, QAM16 = 2, QAM64 = 3};
 struct hdr_cmn {
 	enum dir_t { DOWN= -1, NONE= 0, UP= 1 };
 	packet_t ptype_;	// packet type (see above)
+
+	//liu:aaded for CRLB
+	int in_node_;
+	int32_t probe_ip_;
+	int tor_id_;
+
 	int	size_;		// simulated packet size
 	int	uid_;		// unique id
 	int	error_;		// error flag
@@ -621,6 +627,12 @@ struct hdr_cmn {
 	
         /* per-field member functions */
 	inline packet_t& ptype() { return (ptype_); }
+
+	//liu:aaded for CRLB
+	inline int& in_node() { return (in_node_); }
+	inline int32_t& probe_ip() { return (probe_ip_); }
+	inline int& tor_id() { return (tor_id_); }
+
 	inline int& size() { return (size_); }
 	inline int& uid() { return (uid_); }
 	inline int& error() { return error_; }
@@ -678,6 +690,10 @@ inline Packet* Packet::alloc()
 			abort();
 	}
 	init(p); // Initialize bits_[]
+	(HDR_CMN(p))->in_node_ = -1; //liu:aaded for CRLB
+	(HDR_CMN(p))->probe_ip_ = -1; //liu:aaded for CRLB
+	(HDR_CMN(p))->tor_id_ = -1;
+
 	(HDR_CMN(p))->next_hop_ = -2; // -1 reserved for IP_BROADCAST
 	(HDR_CMN(p))->last_hop_ = -2; // -1 reserved for IP_BROADCAST
 	p->fflag_ = TRUE;

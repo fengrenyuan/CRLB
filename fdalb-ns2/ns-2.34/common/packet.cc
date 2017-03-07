@@ -132,6 +132,7 @@ public:
 		field_offset("size_", OFFSET(hdr_cmn, size_));
 		field_offset("uid_", OFFSET(hdr_cmn, uid_));
 		field_offset("error_", OFFSET(hdr_cmn, error_));
+		field_offset("in_node_",OFFSET(hdr_cmn, in_node_));
 	};
 } class_cmnhdr;
 

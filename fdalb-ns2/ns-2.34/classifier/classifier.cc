@@ -41,6 +41,7 @@ static const char rcsid[] =
 #include "config.h"
 #include "classifier.h"
 #include "packet.h"
+#include "ip.h"
 
 static class ClassifierClass : public TclClass {
 public:
@@ -52,13 +53,14 @@ public:
 
 
 Classifier::Classifier() : 
-	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0)
+	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0)
 {
 	default_target_ = 0;
 
 	bind("offset_", &offset_);
 	bind("shift_", &shift_);
 	bind("mask_", &mask_);
+	bind("tid_", &nid_);
 }
 
 int Classifier::classify(Packet *p)
@@ -141,16 +143,178 @@ int Classifier::getnxt(NsObject *nullagent)
  */
 void Classifier::recv(Packet* p, Handler*h)
 {
-	NsObject* node = find(p);
-	if (node == NULL) {
-		/*
-		 * XXX this should be "dropped" somehow.  Right now,
-		 * these events aren't traced.
-		 */
-		Packet::free(p);
-		return;
+	hdr_ip* ih = hdr_ip::access(p);
+	int probe = ih->dst_.port_;
+	if(probe != -1)
+	{
+		hdr_cmn* ch = hdr_cmn::access(p);
+		hdr_ip* ih = hdr_ip::access(p);
+		printf("%d %d\n",ih->dst_.addr_,ih->dst_.port_);
+		NsObject* node = find(p);
+		if (node == NULL) {
+			/*
+			 * XXX this should be "dropped" somehow.  Right now,
+			 * these events aren't traced.
+			 */
+			Packet::free(p);
+			return;
+		}
+		node->recv(p,h);
 	}
-	node->recv(p,h);
+	else{
+		int scale_ = 4;
+		int half_ = scale_/2;
+		hdr_cmn* ch = hdr_cmn::access(p);
+		int in_node_ = ch->in_node_;
+		int output_ = -1;
+		NsObject* node = NULL;
+		Tcl& tcl = Tcl::instance();
+
+		//spine switch
+		if(nid_ < scale_) {
+			if(in_node_ >= scale_ and in_node_ < scale_+half_) {
+				ch->in_node_ = nid_;
+				ch->probe_ip_ = nid_;
+				output_ = in_node_+half_;
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				Packet::free(p);
+			}
+			else {
+				ch->in_node_ = nid_;
+				ch->probe_ip_ = nid_;
+				output_ = in_node_-half_;
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				Packet::free(p);
+			}
+		}
+
+		//aggr switch
+		else if(nid_ >= scale_ && nid_ < 2*scale_) {
+			if(nid_%2 == 0) {
+
+				//spine -> aggr
+				if(in_node_ < scale_) {
+					ch->in_node_ = nid_;
+					output_ = nid_+scale_;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					output_ = nid_+scale_+1;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					Packet::free(p);
+				}
+
+				//ToR -> aggr
+				else {
+					ch->in_node_ = nid_;
+					ch->probe_ip_ = nid_;
+					output_ = 0;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					output_ = 1;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					if(in_node_%2 == 0) {
+						int output_ = in_node_+1;
+						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+						node = (NsObject*)TclObject::lookup(tcl.result());
+						node->recv(p->copy(),h);
+					}
+					else {
+						int output_ = in_node_-1;
+						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+						node = (NsObject*)TclObject::lookup(tcl.result());
+						node->recv(p->copy(),h);
+					}
+					Packet::free(p);
+				}
+			}
+			else {
+				if(in_node_ < scale_) {
+					ch->in_node_ = nid_;
+					output_ = nid_+scale_;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					output_ = nid_+scale_-1;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					Packet::free(p);
+				}
+				else {
+					ch->in_node_ = nid_;
+					ch->probe_ip_ = nid_;
+					output_ = half_;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					output_ = half_+1;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					if(in_node_%2 == 0) {
+						int output_ = in_node_+1;
+						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+						node = (NsObject*)TclObject::lookup(tcl.result());
+						node->recv(p->copy(),h);
+					}
+					else {
+						int output_ = in_node_-1;
+						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+						node = (NsObject*)TclObject::lookup(tcl.result());
+						node->recv(p->copy(),h);
+					}
+					Packet::free(p);
+				}
+			}
+		}
+
+		//ToR switch
+		else {
+			if(in_node_ == -1) {
+				if(nid_%2 == 0) {
+					ch->in_node_ = nid_;
+					ch->tor_id_ = nid_;
+					output_ = nid_-scale_;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					output_ = nid_-scale_+1;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					Packet::free(p);
+				}
+				else {
+					ch->in_node_ = nid_;
+					ch->tor_id_ = nid_;
+					output_ = nid_-scale_;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					output_ = nid_-scale_-1;
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+					Packet::free(p);
+				}
+			}
+			else {
+				//TODO:receive packet and update util-table
+				//printf("%d reveive probe signed with %d to %d\n",nid_,ch->probe_ip_,ch->tor_id_);
+				Packet::free(p);
+			}
+		}
+	}
 }
 
 /*

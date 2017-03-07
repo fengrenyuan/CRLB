@@ -1027,11 +1027,6 @@ FullTcpAgent::sendpacket(int seqno, int ackno, int pflags, int datalen, int reas
 		//abd
 	}
 
-	//liu: added for CRLB
-	if(isProbe_ == 1) {
-		hdr_tcp::access(p)->probe_mode_ = 1;
-	}
-
   //added for SAB
   if(enable_SAB_ && DSAB_deadline_ <= 0)
   {

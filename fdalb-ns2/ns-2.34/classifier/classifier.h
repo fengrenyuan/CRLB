@@ -87,6 +87,7 @@ protected:
 	int mask_;
 	NsObject *default_target_;
 	int nsize_;       //what size of nslot_ should be
+	int nid_; //liu: indicate the node id
 };
 
 #endif
