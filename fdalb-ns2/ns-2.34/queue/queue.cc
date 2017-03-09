@@ -134,7 +134,7 @@ void Queue::recv(Packet* p, Handler*)
 }
 
 void Queue::utilUpdate(double int_begin, double int_end, int link_state) {
-double decay;
+	double decay;
 
 	decay = exp(-util_weight_ * (int_end - int_begin));
 	old_util_ = link_state + (old_util_ - link_state) * decay;

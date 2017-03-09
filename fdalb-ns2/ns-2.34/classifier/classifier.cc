@@ -38,10 +38,12 @@ static const char rcsid[] =
 #endif
 
 #include <stdlib.h>
+#include <time.h>
 #include "config.h"
 #include "classifier.h"
 #include "packet.h"
 #include "ip.h"
+#include "queue.h"
 
 static class ClassifierClass : public TclClass {
 public:
@@ -144,12 +146,15 @@ int Classifier::getnxt(NsObject *nullagent)
 void Classifier::recv(Packet* p, Handler*h)
 {
 	hdr_ip* ih = hdr_ip::access(p);
+	hdr_cmn* ch = hdr_cmn::access(p);
 	int probe = ih->dst_.port_;
+
+	//normal classify
 	if(probe != -1)
 	{
-		hdr_cmn* ch = hdr_cmn::access(p);
-		hdr_ip* ih = hdr_ip::access(p);
-		printf("%d %d\n",ih->dst_.addr_,ih->dst_.port_);
+		//record link util for every output port
+		update_util(p);
+
 		NsObject* node = find(p);
 		if (node == NULL) {
 			/*
@@ -159,160 +164,13 @@ void Classifier::recv(Packet* p, Handler*h)
 			Packet::free(p);
 			return;
 		}
+		printf("%d\n",ch->size_);
 		node->recv(p,h);
 	}
 	else{
-		int scale_ = 4;
-		int half_ = scale_/2;
-		hdr_cmn* ch = hdr_cmn::access(p);
-		int in_node_ = ch->in_node_;
-		int output_ = -1;
-		NsObject* node = NULL;
-		Tcl& tcl = Tcl::instance();
-
-		//spine switch
-		if(nid_ < scale_) {
-			if(in_node_ >= scale_ and in_node_ < scale_+half_) {
-				ch->in_node_ = nid_;
-				ch->probe_ip_ = nid_;
-				output_ = in_node_+half_;
-				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-				node = (NsObject*)TclObject::lookup(tcl.result());
-				node->recv(p->copy(),h);
-				Packet::free(p);
-			}
-			else {
-				ch->in_node_ = nid_;
-				ch->probe_ip_ = nid_;
-				output_ = in_node_-half_;
-				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-				node = (NsObject*)TclObject::lookup(tcl.result());
-				node->recv(p->copy(),h);
-				Packet::free(p);
-			}
-		}
-
-		//aggr switch
-		else if(nid_ >= scale_ && nid_ < 2*scale_) {
-			if(nid_%2 == 0) {
-
-				//spine -> aggr
-				if(in_node_ < scale_) {
-					ch->in_node_ = nid_;
-					output_ = nid_+scale_;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					output_ = nid_+scale_+1;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					Packet::free(p);
-				}
-
-				//ToR -> aggr
-				else {
-					ch->in_node_ = nid_;
-					ch->probe_ip_ = nid_;
-					output_ = 0;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					output_ = 1;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					if(in_node_%2 == 0) {
-						int output_ = in_node_+1;
-						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-						node = (NsObject*)TclObject::lookup(tcl.result());
-						node->recv(p->copy(),h);
-					}
-					else {
-						int output_ = in_node_-1;
-						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-						node = (NsObject*)TclObject::lookup(tcl.result());
-						node->recv(p->copy(),h);
-					}
-					Packet::free(p);
-				}
-			}
-			else {
-				if(in_node_ < scale_) {
-					ch->in_node_ = nid_;
-					output_ = nid_+scale_;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					output_ = nid_+scale_-1;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					Packet::free(p);
-				}
-				else {
-					ch->in_node_ = nid_;
-					ch->probe_ip_ = nid_;
-					output_ = half_;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					output_ = half_+1;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					if(in_node_%2 == 0) {
-						int output_ = in_node_+1;
-						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-						node = (NsObject*)TclObject::lookup(tcl.result());
-						node->recv(p->copy(),h);
-					}
-					else {
-						int output_ = in_node_-1;
-						tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-						node = (NsObject*)TclObject::lookup(tcl.result());
-						node->recv(p->copy(),h);
-					}
-					Packet::free(p);
-				}
-			}
-		}
-
-		//ToR switch
-		else {
-			if(in_node_ == -1) {
-				if(nid_%2 == 0) {
-					ch->in_node_ = nid_;
-					ch->tor_id_ = nid_;
-					output_ = nid_-scale_;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					output_ = nid_-scale_+1;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					Packet::free(p);
-				}
-				else {
-					ch->in_node_ = nid_;
-					ch->tor_id_ = nid_;
-					output_ = nid_-scale_;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					output_ = nid_-scale_-1;
-					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
-					node = (NsObject*)TclObject::lookup(tcl.result());
-					node->recv(p->copy(),h);
-					Packet::free(p);
-				}
-			}
-			else {
-				//TODO:receive packet and update util-table
-				//printf("%d reveive probe signed with %d to %d\n",nid_,ch->probe_ip_,ch->tor_id_);
-				Packet::free(p);
-			}
+		process_probe(p,h);
+		for(int i=0;i<20;i++){
+			printf("%d %d %f %f\n",nid_,i,pt_[i].path_util_,pt_[i].last_time_);
 		}
 	}
 }
@@ -451,4 +309,272 @@ int Classifier::command(int argc, const char*const* argv)
 		}
 	}
 	return (NsObject::command(argc, argv));
+}
+
+void Classifier::process_probe(Packet* p, Handler*h)
+{
+	NsObject* node = NULL;
+	Tcl& tcl = Tcl::instance();
+	hdr_cmn* ch = hdr_cmn::access(p);
+	int in_node_ = ch->in_node_;
+	int output_ = -1;
+
+	//spine switch
+	if(nid_ < 10) {
+		ch->in_node_ = nid_;
+		ch->probe_ip_ = nid_;
+		if(in_node_ < 14) {
+			for(int i=10;i<14;i++){
+				if(i != in_node_){
+					output_ = i;
+					update_util_probe(p,output_);
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+				}
+			}
+			Packet::free(p);
+		}
+		else {
+			for(int i=14;i<18;i++){
+				if(i != in_node_){
+					output_ = i;
+					update_util_probe(p,output_);
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+				}
+			}
+			Packet::free(p);
+		}
+	}
+
+	//aggr switch
+	else if(nid_ >= 10 && nid_ < 20) {
+		//spine -> aggr
+		if(in_node_ < 10){
+			ch->in_node_ = nid_;
+			output_ = ((nid_-10)%4)*2+20;
+			update_util_probe(p,output_);
+			tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+			node = (NsObject*)TclObject::lookup(tcl.result());
+			node->recv(p->copy(),h);
+			output_ = ((nid_-10)%4)*2+21;
+			update_util_probe(p,output_);
+			tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+			node = (NsObject*)TclObject::lookup(tcl.result());
+			node->recv(p->copy(),h);
+			Packet::free(p);
+		}
+
+		//leaf -> aggr
+		else {
+			ch->in_node_ = nid_;
+			ch->probe_ip_ = nid_;
+			if(nid_ < 14){
+				output_ = 0;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = 1;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			else{
+				output_ = 2;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = 3;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			if(in_node_%2 == 0){
+				output_ = in_node_+1;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			else{
+				output_ = in_node_-1;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			Packet::free(p);
+		}
+	}
+
+	//ToR switch
+	else {
+		//server -> ToR
+		if(in_node_ == -1) {
+			if(nid_%2 == 0) {
+				ch->in_node_ = nid_;
+				ch->tor_id_ = nid_;
+				output_ = (nid_-20)/2+10;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = (nid_-20)/2+14;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			else {
+				ch->in_node_ = nid_;
+				ch->tor_id_ = nid_;
+				output_ = (nid_-21)/2+10;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = (nid_-21)/2+14;
+				update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			Packet::free(p);
+		}
+
+		//ToR -> server
+		else {
+			//TODO:receive packet and update util-table
+			output_ = ch->in_node_;
+			//printf("%d reveive probe signed with %d to %d\n",nid_,ch->probe_ip_,ch->tor_id_);
+			Packet::free(p);
+		}
+	}
+}
+
+void Classifier::update_util(Packet* p)
+{
+	hdr_ip* ih = hdr_ip::access(p);
+	hdr_cmn* ch = hdr_cmn::access(p);
+
+	double time_now = Scheduler::instance().clock();
+	int dst_ = ih->dst().addr_;
+	double time_thr = 1.0;
+	double alpha = 0.5;
+	int pt;
+	printf("hello %f %d %f\n",time_now,dst_,pt_[dst_].path_util_);
+
+	//ToR switch receives packets
+	if(nid_ >= 20){
+		if(dst_ != nid_){
+			if(dst_<10)
+				pt = dst_;
+			else if(dst_>=20)
+				pt = dst_-8;
+			else
+				pt = dst_-6;
+
+			if(pt_[pt].last_time_ == 0){
+				pt_[pt].path_util_ += ch->size_;
+				pt_[pt].last_time_ = time_now;
+			}
+			else{
+				int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
+				if(times > 0){
+					for(int i=0;i<times;i++)
+						pt_[pt].path_util_ *= (1-alpha);
+				}
+				pt_[pt].path_util_ += ch->size_;
+				pt_[pt].last_time_ = time_now;
+			}
+		}
+	}
+
+	//Spine switch receives packets
+	else if(nid_ < 10){
+		if(dst_ == nid_){
+			dst_ = ch->in_ip_;
+		}
+		if(dst_<10)
+			pt = dst_;
+		else if(dst_>=20)
+			pt = dst_-8;
+		else
+			pt = dst_-6;
+
+		if(pt_[pt].last_time_ == 0){
+			pt_[pt].path_util_ += ch->size_;
+			pt_[pt].last_time_ = time_now;
+		}
+		else{
+			int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
+			if(times > 0){
+				for(int i=0;i<times;i++)
+					pt_[pt].path_util_ *= (1-alpha);
+			}
+			pt_[pt].path_util_ += ch->size_;
+			pt_[pt].last_time_ = time_now;
+		}
+	}
+
+	//Aggr switch receives packets
+	else{
+		if(dst_ == nid_){
+			dst_ = ch->in_ip_;
+		}
+		if(dst_<10)
+			pt = dst_;
+		else if(dst_>=20)
+			pt = dst_-8;
+		else
+			pt = dst_-6;
+
+		if(pt_[pt].last_time_ == 0){
+			pt_[pt].path_util_ += ch->size_;
+			pt_[pt].last_time_ = time_now;
+		}
+		else{
+			int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
+			if(times > 0){
+				for(int i=0;i<times;i++)
+					pt_[pt].path_util_ *= (1-alpha);
+			}
+			pt_[pt].path_util_ += ch->size_;
+			pt_[pt].last_time_ = time_now;
+		}
+	}
+}
+
+void Classifier::update_util_probe(Packet* p, int dst)
+{
+	hdr_cmn* ch = hdr_cmn::access(p);
+	double time_now = Scheduler::instance().clock();
+	double time_thr = 1.0;
+	double alpha = 0.5;
+	int pt;
+	if(dst < 10)
+		pt = dst;
+	else if(dst >= 20)
+		pt = dst-8;
+	else
+		pt = dst-6;
+	if(pt_[pt].last_time_ == 0){
+		pt_[pt].path_util_ += ch->size_;
+		pt_[pt].last_time_ = time_now;
+	}
+	else{
+		int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
+		if(times > 0){
+			for(int i=0;i<times;i++)
+				pt_[pt].path_util_ *= (1-alpha);
+		}
+		pt_[pt].path_util_ += ch->size_;
+		pt_[pt].last_time_ = time_now;
+	}
 }

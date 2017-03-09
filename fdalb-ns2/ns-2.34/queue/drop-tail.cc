@@ -87,7 +87,8 @@ void DropTail::enque(Packet* p)
 	if (summarystats) {
                 Queue::updateStats(qib_?q_->byteLength():q_->length());
 	}
-	//printf("qlim_ = %d, qib_ = %d, mean_pktsize_ = %d\n", qlim_, qib_, mean_pktsize_);
+	hdr_cmn* ch = hdr_cmn::access(p);
+	hdr_ip* ih = hdr_ip::access(p);
 	int qlimBytes = qlim_ * mean_pktsize_;
 	if ((!qib_ && (q_->length() + 1) >= qlim_) ||
   	(qib_ && (q_->byteLength() + hdr_cmn::access(p)->size()) >= qlimBytes)){

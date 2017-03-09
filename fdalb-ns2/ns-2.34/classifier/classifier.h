@@ -41,6 +41,13 @@
 
 class Packet;
 
+//liu:added for CRLB
+struct path_util_table {
+	double path_util_;
+	double last_time_;
+	path_util_table():path_util_(0.0),last_time_(0.0){}
+};
+
 class Classifier : public NsObject {
 public:
 	Classifier();
@@ -79,6 +86,9 @@ protected:
 	virtual int getnxt(NsObject *);
 	virtual int command(int argc, const char*const* argv);
 	void alloc(int);
+	void process_probe(Packet* p, Handler*h);
+	void update_util(Packet* p);
+	void update_util_probe(Packet* p, int dst);
 	NsObject** slot_;	/* table that maps slot number to a NsObject */
 	int nslot_;
 	int maxslot_;
@@ -88,6 +98,7 @@ protected:
 	NsObject *default_target_;
 	int nsize_;       //what size of nslot_ should be
 	int nid_; //liu: indicate the node id
+	path_util_table pt_[20]; //liu: added for CRLB
 };
 
 #endif
