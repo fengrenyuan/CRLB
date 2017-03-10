@@ -86,9 +86,14 @@ protected:
 	virtual int getnxt(NsObject *);
 	virtual int command(int argc, const char*const* argv);
 	void alloc(int);
+
+	//liu: added for CRLB
 	void process_probe(Packet* p, Handler*h);
 	void update_util(Packet* p);
 	void update_util_probe(Packet* p, int dst);
+	void judge_util(Packet* p, int nid, int in_node);
+	//liu: added for CRLB
+
 	NsObject** slot_;	/* table that maps slot number to a NsObject */
 	int nslot_;
 	int maxslot_;
@@ -99,6 +104,7 @@ protected:
 	int nsize_;       //what size of nslot_ should be
 	int nid_; //liu: indicate the node id
 	path_util_table pt_[20]; //liu: added for CRLB
+	int ns_time_; //liu: added for CRLB
 };
 
 #endif

@@ -575,6 +575,7 @@ struct hdr_cmn {
 	int32_t probe_ip_;
 	int tor_id_;
 	int32_t in_ip_;
+	double path_util_;
 
 	int	size_;		// simulated packet size
 	int	uid_;		// unique id
@@ -634,6 +635,7 @@ struct hdr_cmn {
 	inline int32_t& probe_ip() { return (probe_ip_); }
 	inline int& tor_id() { return (tor_id_); }
 	inline int32_t& in_ip() { return (in_ip_); }
+	inline double& path_util() { return (path_util_); }
 
 	inline int& size() { return (size_); }
 	inline int& uid() { return (uid_); }
@@ -696,6 +698,7 @@ inline Packet* Packet::alloc()
 	(HDR_CMN(p))->probe_ip_ = -1; //liu:aaded for CRLB
 	(HDR_CMN(p))->tor_id_ = -1;
 	(HDR_CMN(p))->in_ip_ = -1;
+	(HDR_CMN(p))->path_util_ = 0.0;
 
 	(HDR_CMN(p))->next_hop_ = -2; // -1 reserved for IP_BROADCAST
 	(HDR_CMN(p))->last_hop_ = -2; // -1 reserved for IP_BROADCAST

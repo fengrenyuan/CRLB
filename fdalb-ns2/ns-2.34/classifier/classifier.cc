@@ -39,6 +39,7 @@ static const char rcsid[] =
 
 #include <stdlib.h>
 #include <time.h>
+#include <cmath>
 #include "config.h"
 #include "classifier.h"
 #include "packet.h"
@@ -55,7 +56,7 @@ public:
 
 
 Classifier::Classifier() : 
-	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0)
+	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0),ns_time_(0)
 {
 	default_target_ = 0;
 
@@ -146,8 +147,29 @@ int Classifier::getnxt(NsObject *nullagent)
 void Classifier::recv(Packet* p, Handler*h)
 {
 	hdr_ip* ih = hdr_ip::access(p);
-	hdr_cmn* ch = hdr_cmn::access(p);
 	int probe = ih->dst_.port_;
+
+	//liu: judge if is time to update util estimation table
+	double time_thr = 1.0;
+	double alpha_ = 0.5;
+	double time_now = Scheduler::instance().clock();
+	if(ns_time_ == 0){
+		ns_time_ = time_now;
+		for(int i=0;i<20;i++){
+			pt_[i].last_time_ = time_now;
+		}
+	}
+	else{
+		double time_inter  = time_now - ns_time_;
+		if(time_inter >= time_thr){
+			int freq_ = (int)time_inter/time_thr;
+			for(int i=0;i<20;i++){
+				pt_[i].path_util_ *= pow((1-alpha_),freq_);
+				pt_[i].last_time_ += freq_*time_thr;
+			}
+			ns_time_ += freq_*time_thr;
+		}
+	}
 
 	//normal classify
 	if(probe != -1)
@@ -164,14 +186,11 @@ void Classifier::recv(Packet* p, Handler*h)
 			Packet::free(p);
 			return;
 		}
-		printf("%d\n",ch->size_);
 		node->recv(p,h);
 	}
 	else{
 		process_probe(p,h);
-		for(int i=0;i<20;i++){
-			printf("%d %d %f %f\n",nid_,i,pt_[i].path_util_,pt_[i].last_time_);
-		}
+
 	}
 }
 
@@ -319,6 +338,9 @@ void Classifier::process_probe(Packet* p, Handler*h)
 	int in_node_ = ch->in_node_;
 	int output_ = -1;
 
+	//judge if update util
+	judge_util(p,nid_,in_node_);
+
 	//spine switch
 	if(nid_ < 10) {
 		ch->in_node_ = nid_;
@@ -451,8 +473,8 @@ void Classifier::process_probe(Packet* p, Handler*h)
 		//ToR -> server
 		else {
 			//TODO:receive packet and update util-table
-			output_ = ch->in_node_;
-			//printf("%d reveive probe signed with %d to %d\n",nid_,ch->probe_ip_,ch->tor_id_);
+			double util = ch->path_util_;
+			printf("src %d bounce %d dst %d util %f\n",nid_,ch->probe_ip_,ch->tor_id_,util);
 			Packet::free(p);
 		}
 	}
@@ -463,12 +485,8 @@ void Classifier::update_util(Packet* p)
 	hdr_ip* ih = hdr_ip::access(p);
 	hdr_cmn* ch = hdr_cmn::access(p);
 
-	double time_now = Scheduler::instance().clock();
 	int dst_ = ih->dst().addr_;
-	double time_thr = 1.0;
-	double alpha = 0.5;
 	int pt;
-	printf("hello %f %d %f\n",time_now,dst_,pt_[dst_].path_util_);
 
 	//ToR switch receives packets
 	if(nid_ >= 20){
@@ -480,49 +498,11 @@ void Classifier::update_util(Packet* p)
 			else
 				pt = dst_-6;
 
-			if(pt_[pt].last_time_ == 0){
-				pt_[pt].path_util_ += ch->size_;
-				pt_[pt].last_time_ = time_now;
-			}
-			else{
-				int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
-				if(times > 0){
-					for(int i=0;i<times;i++)
-						pt_[pt].path_util_ *= (1-alpha);
-				}
-				pt_[pt].path_util_ += ch->size_;
-				pt_[pt].last_time_ = time_now;
-			}
+			pt_[pt].path_util_ += ch->size_;
 		}
 	}
 
 	//Spine switch receives packets
-	else if(nid_ < 10){
-		if(dst_ == nid_){
-			dst_ = ch->in_ip_;
-		}
-		if(dst_<10)
-			pt = dst_;
-		else if(dst_>=20)
-			pt = dst_-8;
-		else
-			pt = dst_-6;
-
-		if(pt_[pt].last_time_ == 0){
-			pt_[pt].path_util_ += ch->size_;
-			pt_[pt].last_time_ = time_now;
-		}
-		else{
-			int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
-			if(times > 0){
-				for(int i=0;i<times;i++)
-					pt_[pt].path_util_ *= (1-alpha);
-			}
-			pt_[pt].path_util_ += ch->size_;
-			pt_[pt].last_time_ = time_now;
-		}
-	}
-
 	//Aggr switch receives packets
 	else{
 		if(dst_ == nid_){
@@ -535,28 +515,13 @@ void Classifier::update_util(Packet* p)
 		else
 			pt = dst_-6;
 
-		if(pt_[pt].last_time_ == 0){
-			pt_[pt].path_util_ += ch->size_;
-			pt_[pt].last_time_ = time_now;
-		}
-		else{
-			int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
-			if(times > 0){
-				for(int i=0;i<times;i++)
-					pt_[pt].path_util_ *= (1-alpha);
-			}
-			pt_[pt].path_util_ += ch->size_;
-			pt_[pt].last_time_ = time_now;
-		}
+		pt_[pt].path_util_ += ch->size_;
 	}
 }
 
 void Classifier::update_util_probe(Packet* p, int dst)
 {
 	hdr_cmn* ch = hdr_cmn::access(p);
-	double time_now = Scheduler::instance().clock();
-	double time_thr = 1.0;
-	double alpha = 0.5;
 	int pt;
 	if(dst < 10)
 		pt = dst;
@@ -564,17 +529,45 @@ void Classifier::update_util_probe(Packet* p, int dst)
 		pt = dst-8;
 	else
 		pt = dst-6;
-	if(pt_[pt].last_time_ == 0){
-		pt_[pt].path_util_ += ch->size_;
-		pt_[pt].last_time_ = time_now;
-	}
-	else{
-		int times = (int)(time_now-pt_[pt].last_time_)/time_thr;
-		if(times > 0){
-			for(int i=0;i<times;i++)
-				pt_[pt].path_util_ *= (1-alpha);
+	pt_[pt].path_util_ += ch->size_;
+}
+
+void Classifier::judge_util(Packet* p, int nid, int in_node)
+{
+	double util = 0;
+	hdr_cmn* ch = hdr_cmn::access(p);
+	//spine receives probe
+	if(nid < 10){
+		if(nid < 2){
+			util += pt_[in_node-6].path_util_+pt_[in_node*2-8].path_util_+pt_[in_node*2+1-8].path_util_;
 		}
-		pt_[pt].path_util_ += ch->size_;
-		pt_[pt].last_time_ = time_now;
+		else{
+			util += pt_[in_node-6].path_util_+pt_[(in_node-4)*2-8].path_util_+pt_[(in_node-4)*2+1-8].path_util_;
+		}
+	}
+
+	//leaf receives probe
+	else if(nid >= 20){
+		if(in_node != -1){
+			if(in_node >= 10 && in_node < 14){
+				util += pt_[in_node-6].path_util_+pt_[0].path_util_+pt_[1].path_util_;
+			}
+			else{
+				util += pt_[in_node-6].path_util_+pt_[2].path_util_+pt_[3].path_util_;
+			}
+		}
+	}
+
+	//aggr receives probe
+	else{
+		if(nid >= 20){
+			util += pt_[nid-8].path_util_;
+		}
+		else{
+			util += pt_[nid].path_util_;
+		}
+	}
+	if(util > ch->path_util_){
+		ch->path_util_ = util;
 	}
 }
