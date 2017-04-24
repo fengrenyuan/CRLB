@@ -92,6 +92,7 @@ protected:
 	void update_util(Packet* p);
 	void update_util_probe(Packet* p, int dst);
 	void judge_util(Packet* p, int nid, int in_node);
+	void select_path(int flowlet_id, int dst_tor);
 	//liu: added for CRLB
 
 	NsObject** slot_;	/* table that maps slot number to a NsObject */
@@ -104,7 +105,20 @@ protected:
 	int nsize_;       //what size of nslot_ should be
 	int nid_; //liu: indicate the node id
 	path_util_table pt_[20]; //liu: added for CRLB
-	int ns_time_; //liu: added for CRLB
+
+	//two array represent flowlet table
+	double flowlet_table[100];
+	int flowlet_path[100];
+	//two array represent flowlet table
+
+	//four array represent path table
+	int path_table[8][3];
+	double path_util[8][3];
+	int path_weight[8][3];
+	double path_time[8];
+	//three array represent path table
+
+	double ns_time_; //liu: added for CRLB
 };
 
 #endif

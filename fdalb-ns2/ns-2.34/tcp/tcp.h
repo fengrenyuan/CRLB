@@ -27,8 +27,8 @@ struct hdr_tcp {
   int DSAB_type_;
   int DSAB_SYN_FIN_;
 
-//	//liu: added for CRLB
-//	int probe_mode_; /*a probe is marked with isProbe set 1, otherwise is 0*/
+  //liu: added for CRLB
+  int flow_id_;
 
   double DSAB_wnd_;
   double DSAB_wndApply_;
@@ -216,7 +216,7 @@ protected:
 				/* windows */
 
 	/* connection and packet dynamics */
-virtual void output(int seqno, int reason = 0);
+	virtual void output(int seqno, int reason = 0);
 	virtual void send_much(int force, int reason, int maxburst = 0);
 	virtual void newtimer(Packet*);
 	virtual void dupack_action();		/* do this on dupacks */
@@ -462,6 +462,10 @@ virtual void output(int seqno, int reason = 0);
 	//ws: added for DSAB
   int DSAB_type_; //only used by receiver side.
   double DSAB_deadline_;
+
+  //liu: added for CRLB
+  int flow_id_;
+
   double wndApply_; //wnd varation w(n+1)-w(n)
   double wndBase_; //w(n)
   double rateOld_;

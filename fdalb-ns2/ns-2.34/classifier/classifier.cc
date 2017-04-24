@@ -44,6 +44,7 @@ static const char rcsid[] =
 #include "classifier.h"
 #include "packet.h"
 #include "ip.h"
+#include "tcp.h"
 #include "queue.h"
 
 static class ClassifierClass : public TclClass {
@@ -56,7 +57,7 @@ public:
 
 
 Classifier::Classifier() : 
-	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0),ns_time_(0)
+	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0),ns_time_(0.0)
 {
 	default_target_ = 0;
 
@@ -64,6 +65,16 @@ Classifier::Classifier() :
 	bind("shift_", &shift_);
 	bind("mask_", &mask_);
 	bind("tid_", &nid_);
+
+	//liu: initialize for path table
+	for(int i=0;i<8;i++){
+		for(int j=0;j<3;j++){
+			path_table[i][j] = -1;
+			path_util[i][j] = 1000000;
+			path_weight[i][j] = 1;
+		}
+		path_time[i] = 0.0;
+	}
 }
 
 int Classifier::classify(Packet *p)
@@ -147,13 +158,14 @@ int Classifier::getnxt(NsObject *nullagent)
 void Classifier::recv(Packet* p, Handler*h)
 {
 	hdr_ip* ih = hdr_ip::access(p);
+	hdr_cmn* ch = hdr_cmn::access(p);
 	int probe = ih->dst_.port_;
 
 	//liu: judge if is time to update util estimation table
-	double time_thr = 1.0;
+	double time_thr = 0.008;
 	double alpha_ = 0.5;
 	double time_now = Scheduler::instance().clock();
-	if(ns_time_ == 0){
+	if(ns_time_ == 0.0){
 		ns_time_ = time_now;
 		for(int i=0;i<20;i++){
 			pt_[i].last_time_ = time_now;
@@ -162,21 +174,63 @@ void Classifier::recv(Packet* p, Handler*h)
 	else{
 		double time_inter  = time_now - ns_time_;
 		if(time_inter >= time_thr){
-			int freq_ = (int)time_inter/time_thr;
+			int freq_ = (int)(time_inter/time_thr);
+			//printf("freq %d\n", freq_);
 			for(int i=0;i<20;i++){
 				pt_[i].path_util_ *= pow((1-alpha_),freq_);
+				//printf("util %f\n", pt_[i].path_util_);
 				pt_[i].last_time_ += freq_*time_thr;
 			}
 			ns_time_ += freq_*time_thr;
 		}
 	}
-
+	//ToR receives packet
 	//normal classify
 	if(probe != -1)
 	{
-		//record link util for every output port
-		update_util(p);
+		if(!(hdr_cmn::access(p)->ptype_ == PT_ACK)){
+			hdr_tcp* th = hdr_tcp::access(p);
+			//printf("starting data transmission\n");
+			//liu: record link util for every output port
+			update_util(p);
+			//ToR receives packet
+			if(nid_ >= 20){
+				int flowlet_id = th->flow_id_ % 100;
+				printf("%d\n", flowlet_id);
+				int dst_tor = ih->dst_.addr_;
+				if(!(ih->dst_.addr_ == nid_)){
+					if(!ch->check()){
+						ch->check_ = true;
+						//liu: judge if in flowlet table, if not, select a new path
+						if(flowlet_table[flowlet_id] == 0.0 || time_now-flowlet_table[flowlet_id] > time_thr){
+							select_path(flowlet_id, dst_tor-20);
+						}
+						if(ih->dst_.addr_ >= 20)
+							ch->in_ip_ = ih->dst_.addr_;
+						//printf("%d leaf %d %d->%d\n",nid_,ch->in_ip_,ih->src_.addr_,ih->dst_.addr_);
+						ih->dst_.addr_ = flowlet_path[flowlet_id];
+					}
+					flowlet_table[flowlet_id] = time_now;
+				}
+				else{
+					//printf("%d receive %d\n", nid_,ih->dst_);
+				}
+			}
 
+			//Aggr receives packet
+			else if(nid_ >= 10){
+				if(ih->dst_.addr_ == nid_){
+					ih->dst_.addr_ = ch->in_ip_;
+				}
+			}
+
+			//Core receives packet
+			else{
+				if(ih->dst_.addr_ == nid_){
+					ih->dst_.addr_ = ch->in_ip_;
+				}
+			}
+		}
 		NsObject* node = find(p);
 		if (node == NULL) {
 			/*
@@ -188,9 +242,10 @@ void Classifier::recv(Packet* p, Handler*h)
 		}
 		node->recv(p,h);
 	}
+
+	//probe classify
 	else{
 		process_probe(p,h);
-
 	}
 }
 
@@ -472,9 +527,43 @@ void Classifier::process_probe(Packet* p, Handler*h)
 
 		//ToR -> server
 		else {
-			//TODO:receive packet and update util-table
-			double util = ch->path_util_;
-			printf("src %d bounce %d dst %d util %f\n",nid_,ch->probe_ip_,ch->tor_id_,util);
+			//printf("%d ToR receives and processes probe\n", nid_);
+			int tor_id = ch->tor_id() - 20;
+			double util_ = ch->path_util();
+			int b_switch = ch->probe_ip();
+			int weight_ = 1;
+			bool check_in_table = false;
+
+			for(int i=0;i<3;i++){
+				if(path_table[tor_id][i] == b_switch){
+					check_in_table = true;
+					path_util[tor_id][i] = util_;
+					break;
+				}
+			}
+			if(!check_in_table){
+				for(int i=0;i<3;i++){
+					if(path_table[tor_id][i] == -1){
+						path_table[tor_id][i] = b_switch;
+						path_util[tor_id][i] = util_;
+						path_weight[tor_id][i] = weight_;
+						break;
+					}
+					else{
+						if(util_ < path_util[tor_id][i]){
+							int temp_ip = path_table[tor_id][i];
+							double temp_util = path_util[tor_id][i];
+							int temp_weight = path_weight[tor_id][i];
+							path_table[tor_id][i] = b_switch;
+							path_util[tor_id][i] = util_;
+							path_weight[tor_id][i] = weight_;
+							b_switch = temp_ip;
+							util_ = temp_util;
+							weight_ = temp_weight;
+						}
+					}
+				}
+			}
 			Packet::free(p);
 		}
 	}
@@ -569,5 +658,55 @@ void Classifier::judge_util(Packet* p, int nid, int in_node)
 	}
 	if(util > ch->path_util_){
 		ch->path_util_ = util;
+	}
+}
+
+void Classifier::select_path(int flowlet_id, int dst_tor)
+{
+	//reduce weight according to time
+	double time_thr = 0.05;
+	double time_now = Scheduler::instance().clock();
+	if(path_time[dst_tor] == 0.000000){
+		path_time[dst_tor] = time_now;
+	}
+	else{
+		double time_inter = time_now - path_time[dst_tor];
+		if(time_inter >= time_thr){
+		int freq_ = (int)time_inter/time_thr;
+			for(int j=0;j<3;j++){
+				path_weight[dst_tor][j] *= pow(0.5,freq_);
+				if(path_weight[dst_tor][j] < 1)
+					path_weight[dst_tor][j] = 1;
+			}
+			path_time[dst_tor] += time_thr * freq_;
+		}
+	}
+
+	//select path according to weight
+	int weight_1 = pow(2,20)/path_weight[dst_tor][0];
+	if(weight_1 <= 0)
+		weight_1 = 1;
+	int weight_2 = pow(2,20)/path_weight[dst_tor][1];
+	if(weight_2 <= 0)
+			weight_2 = 1;
+	int weight_3 = pow(2,20)/path_weight[dst_tor][2];
+	if(weight_3 <= 0)
+			weight_3 = 1;
+	//printf("%d %d %d\n", weight_1, weight_2, weight_3);
+	//printf("path_table %d %d %d\n", path_table[dst_tor][0], path_table[dst_tor][1], path_table[dst_tor][2]);
+	int total = weight_1 + weight_2 + weight_3;
+	srand(int(time_now*1000000));
+	int ran_num = rand() % total;
+	if(ran_num < weight_1){
+		flowlet_path[flowlet_id] = path_table[dst_tor][0];
+		path_weight[dst_tor][0] *= 2;
+	}
+	else if(ran_num >= weight_1 && ran_num < weight_1+weight_2){
+		flowlet_path[flowlet_id] = path_table[dst_tor][1];
+		path_weight[dst_tor][1] *= 2;
+	}
+	else{
+		flowlet_path[flowlet_id] = path_table[dst_tor][2];
+		path_weight[dst_tor][2] *= 2;
 	}
 }
