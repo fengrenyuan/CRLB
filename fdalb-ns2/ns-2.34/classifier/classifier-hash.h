@@ -36,6 +36,7 @@
 
 #include "classifier.h"
 #include "ip.h"
+#include "tcp.h"
 
 class Flow;
 
@@ -53,6 +54,7 @@ public:
 	virtual int classify(Packet *p);
 	virtual long lookup(Packet* p) {
 		hdr_ip* h = hdr_ip::access(p);
+		hdr_tcp* th = hdr_tcp::access(p);
 		return get_hash(mshift(h->saddr()), mshift(h->daddr()), 
 				h->flowid());
 	}

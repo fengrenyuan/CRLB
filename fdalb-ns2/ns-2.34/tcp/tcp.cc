@@ -830,9 +830,6 @@ void TcpAgent::output(int seqno, int reason)
     ++ndatapack_;
     ndatabytes_ += databytes;
 
-	//liu: added for CRLB
-	tcph->flow_id_ = flow_id_;
-
 	send(p, 0);
 	if (seqno == curseq_ && seqno > maxseq_)
 		idle();  // Tell application I have sent everything so far
@@ -931,12 +928,6 @@ int TcpAgent::command(int argc, const char*const* argv)
 		if (strcmp(argv[1], "setOn") == 0) {
 			this->d2tcp_ = 1;
 			this->d2tcp_deadline_ = atof(argv[2]);
-			return (TCL_OK);
-		}
-
-		//liu: added for CRLB
-		if (strcmp(argv[1], "set_id") == 0) {
-			this->flow_id_ = atoi(argv[2]);
 			return (TCL_OK);
 		}
 

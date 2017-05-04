@@ -279,6 +279,11 @@ FullTcpAgent::command(int argc, const char*const* argv)
 		        flow_remaining_ = atoi(argv[2]);
 		        return(TCL_OK);
 		}
+		//liu: added for CRLB
+		if (strcmp(argv[1], "set_id") == 0) {
+			this->flow_id_ = atoi(argv[2]);
+			return (TCL_OK);
+		}
 	}
 	if (argc == 4) {
 		if (strcmp(argv[1], "sendmsg") == 0) {
@@ -320,7 +325,6 @@ FullTcpAgent::advanceby(int np)
 	//	and if it's there, pre-divide it
 	if (np >= 0x10000000)
 		np /= maxseg_;
-
 	advance_bytes(np * maxseg_);
 	return;
 }
@@ -458,7 +462,7 @@ void
 FullTcpAgent::bufferempty()
 {
    	signal_on_empty_=FALSE;
-	printf("flow fid= %d is done SAB_STAT= %d\n",fid_,SAB_state_);
+	//printf("flow fid= %d is done SAB_STAT= %d\n",fid_,SAB_state_);
 	Tcl::instance().evalf("%s done_data", this->name());
 }
 
@@ -907,6 +911,10 @@ FullTcpAgent::sendpacket(int seqno, int ackno, int pflags, int datalen, int reas
 	tcph->sa_length() = 0;    // may be increased by build_options()
         tcph->hlen() = tcpip_base_hdr_size_;
 	tcph->hlen() += build_options(tcph);
+
+	//liu: added for CRLB
+	tcph->flow_id_ = this->flow_id_;
+
 	//Shuang: reduce header length
 	//tcph->hlen() = 1;
 
@@ -2670,7 +2678,7 @@ trimthenstep6:
 			        //Mohammad: check for dynamic dupack mode.
 			         if (dynamic_dupack_ > 0.0) {
 						 if(dynamic_dupack_ * window() >= 3.0) {
-							 printf("%f\n", dynamic_dupack_ *window());
+							 //printf("%f\n", dynamic_dupack_ *window());
 							 long long int temp = (long long int)(dynamic_dupack_ * window());
 							 tcprexmtthresh_ = temp;
 						 }

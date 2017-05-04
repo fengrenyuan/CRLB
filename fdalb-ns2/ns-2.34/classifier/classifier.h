@@ -107,8 +107,8 @@ protected:
 	path_util_table pt_[20]; //liu: added for CRLB
 
 	//two array represent flowlet table
-	double flowlet_table[100];
-	int flowlet_path[100];
+	double flowlet_table[10000];
+	int flowlet_path[10000];
 	//two array represent flowlet table
 
 	//four array represent path table
@@ -119,6 +119,7 @@ protected:
 	//three array represent path table
 
 	double ns_time_; //liu: added for CRLB
+	int which_ns; //liu: added to indicate whether ECMP or CRLB or Null
 };
 
 #endif
