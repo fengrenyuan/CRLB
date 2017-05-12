@@ -89,6 +89,7 @@ protected:
 
 	//liu: added for CRLB
 	void process_probe(Packet* p, Handler*h);
+	void process_probe_new(Packet* p, Handler*h);
 	void update_util(Packet* p);
 	void update_util_probe(Packet* p, int dst);
 	void judge_util(Packet* p, int nid, int in_node);
@@ -107,19 +108,20 @@ protected:
 	path_util_table pt_[20]; //liu: added for CRLB
 
 	//two array represent flowlet table
-	double flowlet_table[10000];
-	int flowlet_path[10000];
+	double flowlet_table[20000];
+	int flowlet_path[20000];
 	//two array represent flowlet table
 
 	//four array represent path table
 	int path_table[8][3];
 	double path_util[8][3];
-	int path_weight[8][3];
+	double path_weight[8][3];
 	double path_time[8];
 	//three array represent path table
 
 	double ns_time_; //liu: added for CRLB
 	int which_ns; //liu: added to indicate whether ECMP or CRLB or Null
+	bool rand_;
 };
 
 #endif

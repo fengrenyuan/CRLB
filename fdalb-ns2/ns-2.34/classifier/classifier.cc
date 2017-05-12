@@ -57,7 +57,7 @@ public:
 
 
 Classifier::Classifier() : 
-	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0),ns_time_(0.0),which_ns(0)
+	slot_(0), nslot_(0), maxslot_(-1), shift_(0), mask_(0xffffffff), nsize_(0),nid_(0),ns_time_(0.0),which_ns(0),rand_(true)
 {
 	default_target_ = 0;
 
@@ -71,8 +71,8 @@ Classifier::Classifier() :
 	for(int i=0;i<8;i++){
 		for(int j=0;j<3;j++){
 			path_table[i][j] = -1;
-			path_util[i][j] = 99999999;
-			path_weight[i][j] = pow(2,20);
+			path_util[i][j] = 999999999999;
+			path_weight[i][j] = 200000000;
 		}
 		path_time[i] = 0.0;
 	}
@@ -163,7 +163,7 @@ void Classifier::recv(Packet* p, Handler*h)
 	int probe = ih->dst_.port_;
 
 	//liu: judge if is time to update util estimation table
-	double time_thr = 3;
+	double time_thr = 0.0015;
 	double alpha_ = 0.5;
 	double time_now = Scheduler::instance().clock();
 	if(ns_time_ == 0.0){
@@ -176,7 +176,6 @@ void Classifier::recv(Packet* p, Handler*h)
 		double time_inter  = time_now - ns_time_;
 		if(time_inter >= time_thr){
 			int freq_ = (int)(time_inter/time_thr);
-			//printf("freq %d\n", freq_);
 			for(int i=0;i<20;i++){
 				pt_[i].path_util_ *= pow((1-alpha_),freq_);
 				//printf("util %f\n", pt_[i].path_util_);
@@ -198,14 +197,16 @@ void Classifier::recv(Packet* p, Handler*h)
 				//liu: record link util for every output port
 				//ToR receives packet
 				if(nid_ >= 20){
-					int flowlet_id = th->flow_id_ % 10000;
+					int flowlet_id = th->flow_id_ % 20000;
 					int dst_tor = ih->dst_.addr_;
 					if(!(ih->dst_.addr_ == nid_)){
 						if(!ch->check()){
 							ch->check_ = true;
 							//liu: judge if in flowlet table, if not, select a new path
 							if(flowlet_table[flowlet_id] == 0.0 || time_now-flowlet_table[flowlet_id] > time_thr){
+//								printf("test start\n");
 								select_path(flowlet_id, dst_tor-20);
+//								printf("test end\n");
 							}
 							if(ih->dst_.addr_ >= 20)
 								ch->in_ip_ = ih->dst_.addr_;
@@ -242,7 +243,7 @@ void Classifier::recv(Packet* p, Handler*h)
 						if(!ch->check()){
 							ch->check_ = true;
 							int flow_id_ = th->flow_id_;
-							int ip = ((flow_id_ + ih->dst_.addr_ + ih->src_.addr_)/13)%4;
+							int ip = ((flow_id_ + ih->dst_.addr_ + ih->src_.addr_ + ih->dport())/13)%4;
 							ch->in_ip_ = ih->dst_.addr_;
 							ih->dst_.addr_ = ip;
 						}
@@ -266,11 +267,10 @@ void Classifier::recv(Packet* p, Handler*h)
 		}
 		node->recv(p,h);
 	}
-
 	//probe classify
 	else{
 		//if(which_ns == 1)
-			process_probe(p,h);
+		process_probe(p,h);
 	}
 }
 
@@ -430,6 +430,8 @@ void Classifier::process_probe(Packet* p, Handler*h)
 				if(i != in_node_){
 					output_ = i;
 					//update_util_probe(p,output_);
+					tcl.evalf("[Simulator instance] get-link-head %d %d", 1, 20);
+					printf("here %s",tcl.result());
 					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
 					node = (NsObject*)TclObject::lookup(tcl.result());
 					node->recv(p->copy(),h);
@@ -556,7 +558,6 @@ void Classifier::process_probe(Packet* p, Handler*h)
 			int tor_id = ch->tor_id() - 20;
 			double util_ = ch->path_util();
 			int b_switch = ch->probe_ip();
-			int weight_ = 1;
 			bool check_in_table = false;
 
 			for(int i=0;i<3;i++){
@@ -566,19 +567,221 @@ void Classifier::process_probe(Packet* p, Handler*h)
 					break;
 				}
 			}
+			//init weight of path
+			double weight_;
+			if(path_weight[tor_id][0] <= path_weight[tor_id][1] && path_weight[tor_id][0] <= path_weight[tor_id][2])
+				weight_ = path_weight[tor_id][0];
+			else if(path_weight[tor_id][1] <= path_weight[tor_id][0] && path_weight[tor_id][1] <= path_weight[tor_id][2])
+				weight_ = path_weight[tor_id][1];
+			else
+				weight_ = path_weight[tor_id][2];
 			if(!check_in_table){
 				for(int i=0;i<3;i++){
 					if(path_table[tor_id][i] == -1){
 						path_table[tor_id][i] = b_switch;
 						path_util[tor_id][i] = util_;
-						path_weight[tor_id][i] = weight_;
+						path_weight[tor_id][i] = 1;
 						break;
 					}
 					else{
 						if(util_ < path_util[tor_id][i]){
 							int temp_ip = path_table[tor_id][i];
 							double temp_util = path_util[tor_id][i];
-							int temp_weight = path_weight[tor_id][i];
+							double temp_weight = path_weight[tor_id][i];
+							path_table[tor_id][i] = b_switch;
+							path_util[tor_id][i] = util_;
+							path_weight[tor_id][i] = weight_;
+							b_switch = temp_ip;
+							util_ = temp_util;
+							weight_ = temp_weight;
+						}
+					}
+				}
+			}
+			//printf("path_table %d %d %d\n", path_table[tor_id][0], path_table[tor_id][1], path_table[tor_id][2]);
+			Packet::free(p);
+		}
+	}
+}
+
+void Classifier::process_probe_new(Packet* p, Handler*h)
+{
+	NsObject* node = NULL;
+	Tcl& tcl = Tcl::instance();
+	hdr_cmn* ch = hdr_cmn::access(p);
+	int in_node_ = ch->in_node_;
+	int output_ = -1;
+
+	//judge if update util
+	judge_util(p,nid_,in_node_);
+
+	//spine switch
+	if(nid_ < 10) {
+		ch->in_node_ = nid_;
+		ch->probe_ip_ = nid_;
+		if(in_node_ < 14) {
+			for(int i=10;i<14;i++){
+				if(i != in_node_){
+					output_ = i;
+					//update_util_probe(p,output_);
+					tcl.evalf("[Simulator instance] get-link-head %d %d", 1, 20);
+					printf("here %s",tcl.result());
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+				}
+			}
+			Packet::free(p);
+		}
+		else {
+			for(int i=14;i<18;i++){
+				if(i != in_node_){
+					output_ = i;
+					//update_util_probe(p,output_);
+					tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+					node = (NsObject*)TclObject::lookup(tcl.result());
+					node->recv(p->copy(),h);
+				}
+			}
+			Packet::free(p);
+		}
+	}
+
+	//aggr switch
+	else if(nid_ >= 10 && nid_ < 20) {
+		//spine -> aggr
+		if(in_node_ < 10){
+			ch->in_node_ = nid_;
+			output_ = ((nid_-10)%4)*2+20;
+			//update_util_probe(p,output_);
+			tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+			node = (NsObject*)TclObject::lookup(tcl.result());
+			node->recv(p->copy(),h);
+			output_ = ((nid_-10)%4)*2+21;
+			//update_util_probe(p,output_);
+			tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+			node = (NsObject*)TclObject::lookup(tcl.result());
+			node->recv(p->copy(),h);
+			Packet::free(p);
+		}
+
+		//leaf -> aggr
+		else {
+			ch->in_node_ = nid_;
+			ch->probe_ip_ = nid_;
+			if(nid_ < 14){
+				output_ = 0;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = 1;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			else{
+				output_ = 2;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = 3;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			if(in_node_%2 == 0){
+				output_ = in_node_+1;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			else{
+				output_ = in_node_-1;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			Packet::free(p);
+		}
+	}
+
+	//ToR switch
+	else {
+		//server -> ToR
+		if(in_node_ == -1) {
+			if(nid_%2 == 0) {
+				ch->in_node_ = nid_;
+				ch->tor_id_ = nid_;
+				output_ = (nid_-20)/2+10;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = (nid_-20)/2+14;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			else {
+				ch->in_node_ = nid_;
+				ch->tor_id_ = nid_;
+				output_ = (nid_-21)/2+10;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+				output_ = (nid_-21)/2+14;
+				//update_util_probe(p,output_);
+				tcl.evalf("[Simulator instance] get-link-head %d %d", nid_,output_);
+				node = (NsObject*)TclObject::lookup(tcl.result());
+				node->recv(p->copy(),h);
+			}
+			Packet::free(p);
+		}
+
+		//ToR -> server
+		else {
+			//printf("%d ToR receives and processes probe\n", nid_);
+			int tor_id = ch->tor_id() - 20;
+			double util_ = ch->path_util();
+			int b_switch = ch->probe_ip();
+			bool check_in_table = false;
+
+			for(int i=0;i<3;i++){
+				if(path_table[tor_id][i] == b_switch){
+					check_in_table = true;
+					path_util[tor_id][i] = util_;
+					break;
+				}
+			}
+			//init weight of path
+			double weight_;
+			if(path_weight[tor_id][0] <= path_weight[tor_id][1] && path_weight[tor_id][0] <= path_weight[tor_id][2])
+				weight_ = path_weight[tor_id][0];
+			else if(path_weight[tor_id][1] <= path_weight[tor_id][0] && path_weight[tor_id][1] <= path_weight[tor_id][2])
+				weight_ = path_weight[tor_id][1];
+			else
+				weight_ = path_weight[tor_id][2];
+			if(!check_in_table){
+				for(int i=0;i<3;i++){
+					if(path_table[tor_id][i] == -1){
+						path_table[tor_id][i] = b_switch;
+						path_util[tor_id][i] = util_;
+						path_weight[tor_id][i] = 1;
+						break;
+					}
+					else{
+						if(util_ < path_util[tor_id][i]){
+							int temp_ip = path_table[tor_id][i];
+							double temp_util = path_util[tor_id][i];
+							double temp_weight = path_weight[tor_id][i];
 							path_table[tor_id][i] = b_switch;
 							path_util[tor_id][i] = util_;
 							path_weight[tor_id][i] = weight_;
@@ -690,15 +893,17 @@ void Classifier::judge_util(Packet* p, int nid, int in_node)
 void Classifier::select_path(int flowlet_id, int dst_tor)
 {
 	//reduce weight according to time
-	double time_thr = 0.000006;
+	double time_thr = 0.1;
 	double time_now = Scheduler::instance().clock();
 	if(path_time[dst_tor] == 0.000000){
 		path_time[dst_tor] = time_now;
 	}
 	else{
 		double time_inter = time_now - path_time[dst_tor];
+		printf("here %f\n", time_now);
 		if(time_inter >= time_thr){
-		int freq_ = (int)time_inter/time_thr;
+			int freq_ = (int)(time_inter/time_thr);
+			printf("freq %d\n", freq_);
 			for(int j=0;j<3;j++){
 				path_weight[dst_tor][j] *= pow(0.5,freq_);
 				if(path_weight[dst_tor][j] < 1)
@@ -708,66 +913,127 @@ void Classifier::select_path(int flowlet_id, int dst_tor)
 		}
 	}
 
-	if(path_util[dst_tor][0] <= 1)
-		path_util[dst_tor][0] = 1;
-	int weight_1 = 2000000000/path_util[dst_tor][0];
-	if(weight_1 <= 1)
-		weight_1 = 1;
-	if(path_util[dst_tor][1] <= 1)
-		path_util[dst_tor][1] = 1;
-	int weight_2 = 2000000000/path_util[dst_tor][1];
-	if(weight_2 <= 1)
-			weight_2 = 1;
-	if(path_util[dst_tor][2] <= 1)
-		path_util[dst_tor][2] = 1;
-	int weight_3 = 2000000000/path_util[dst_tor][2];
-	if(weight_3 <= 1)
-			weight_3 = 1;
+//	if(path_util[dst_tor][0] <= 1)
+//		path_util[dst_tor][0] = 1;
+//	int weight_1 = 2000000000/path_util[dst_tor][0];
+//	if(weight_1 <= 1)
+//		weight_1 = 1;
+//	if(path_util[dst_tor][1] <= 1)
+//		path_util[dst_tor][1] = 1;
+//	int weight_2 = 2000000000/path_util[dst_tor][1];
+//	if(weight_2 <= 1)
+//			weight_2 = 1;
+//	if(path_util[dst_tor][2] <= 1)
+//		path_util[dst_tor][2] = 1;
+//	int weight_3 = 2000000000/path_util[dst_tor][2];
+//	if(weight_3 <= 1)
+//			weight_3 = 1;
 
 	//select path according to weight
-//	int weight_1 = pow(2,20)/path_weight[dst_tor][0];
-//	if(weight_1 <= 0)
-//		weight_1 = 1;
-//	int weight_2 = pow(2,20)/path_weight[dst_tor][1];
-//	if(weight_2 <= 0)
-//			weight_2 = 1;
-//	int weight_3 = pow(2,20)/path_weight[dst_tor][2];
-//	if(weight_3 <= 0)
-//			weight_3 = 1;
-	//printf("%d %d %d\n", weight_1, weight_2, weight_3);
-	//printf("path_table %d %d %d\n", path_table[dst_tor][0], path_table[dst_tor][1], path_table[dst_tor][2]);
-	//printf("path_util %f %f %f\n", path_util[dst_tor][0], path_util[dst_tor][1], path_util[dst_tor][2]);
-	int total = weight_1 + weight_2 + weight_3;
+	double weight_1 = 200000000/path_weight[dst_tor][0];
+	if(weight_1 <= 1)
+		weight_1 = 1;
+	double weight_2 = 200000000/path_weight[dst_tor][1];
+	if(weight_2 <= 1)
+			weight_2 = 1;
+	double weight_3 = 200000000/path_weight[dst_tor][2];
+	if(weight_3 <= 1)
+			weight_3 = 1;
+	printf("weight %f %f %f\n", weight_1, weight_2, weight_3);
+	printf("path_table %d %d %d\n", path_table[dst_tor][0], path_table[dst_tor][1], path_table[dst_tor][2]);
+	printf("path_util %f %f %f\n", path_util[dst_tor][0], path_util[dst_tor][1], path_util[dst_tor][2]);
+	double total = weight_1 + weight_2 + weight_3;
 	srand(int(time_now*1000000));
-	int ran_num = rand() % total;
+	double ran_num = (double)(rand() % int(total));
+
+	//path 1
 	if(ran_num < weight_1){
 		if(path_table[dst_tor][0] == -1){
-			flowlet_path[flowlet_id] = path_table[dst_tor][1];
-			path_weight[dst_tor][1] *= 2;
+			if(rand_){
+				flowlet_path[flowlet_id] = path_table[dst_tor][1];
+				path_weight[dst_tor][1] *= 1.5;
+			}
+			else{
+				flowlet_path[flowlet_id] = path_table[dst_tor][2];
+				path_weight[dst_tor][2] *= 1.5;
+			}
+			rand_ = not rand_;
 		}
 		else{
-			flowlet_path[flowlet_id] = path_table[dst_tor][0];
-			path_weight[dst_tor][0] *= 2;
+			printf("%f %f %f\n", path_weight[dst_tor][0], path_weight[dst_tor][1], path_weight[dst_tor][2]);
+			if((path_util[dst_tor][0]+1)/(path_util[dst_tor][1]+1) > 100){
+				flowlet_path[flowlet_id] = path_table[dst_tor][1];
+				path_weight[dst_tor][1] *= 1.5;
+			}
+			else if((path_util[dst_tor][0]+1)/(path_util[dst_tor][2]+1) > 100){
+				flowlet_path[flowlet_id] = path_table[dst_tor][2];
+				path_weight[dst_tor][2] *= 1.5;
+			}
+			else{
+				flowlet_path[flowlet_id] = path_table[dst_tor][0];
+				path_weight[dst_tor][0] *= 1.5;
+			}
 		}
 	}
+
+	//path 2
 	else if(ran_num >= weight_1 && ran_num < weight_1+weight_2){
+		printf("path2\n");
 		if(path_table[dst_tor][1] == -1){
-			flowlet_path[flowlet_id] = path_table[dst_tor][2];
-			path_weight[dst_tor][2] *= 2;
+			if(rand_){
+				flowlet_path[flowlet_id] = path_table[dst_tor][0];
+				path_weight[dst_tor][0] *= 1.5;
+			}
+			else{
+				flowlet_path[flowlet_id] = path_table[dst_tor][2];
+				path_weight[dst_tor][2] *= 1.5;
+			}
+			rand_ = not rand_;
 		}
 		else{
-			flowlet_path[flowlet_id] = path_table[dst_tor][1];
-			path_weight[dst_tor][1] *= 2;
+			printf("%f %f %f\n", path_weight[dst_tor][0], path_weight[dst_tor][1], path_weight[dst_tor][2]);
+			if((path_util[dst_tor][1]+1)/(path_util[dst_tor][0]+1) > 100){
+				flowlet_path[flowlet_id] = path_table[dst_tor][0];
+				path_weight[dst_tor][0] *= 1.5;
+			}
+			else if((path_util[dst_tor][1]+1)/(path_util[dst_tor][2]+1) > 100){
+				flowlet_path[flowlet_id] = path_table[dst_tor][2];
+				path_weight[dst_tor][2] *= 1.5;
+			}
+			else{
+				flowlet_path[flowlet_id] = path_table[dst_tor][1];
+				path_weight[dst_tor][1] *= 1.5;
+			}
 		}
 	}
+
+	//path 3
 	else{
 		if(path_table[dst_tor][2] == -1){
-			flowlet_path[flowlet_id] = path_table[dst_tor][0];
-			path_weight[dst_tor][0] *= 2;
+			if(rand_){
+				flowlet_path[flowlet_id] = path_table[dst_tor][0];
+				path_weight[dst_tor][0] *= 1.5;
+			}
+			else{
+				flowlet_path[flowlet_id] = path_table[dst_tor][1];
+				path_weight[dst_tor][1] *= 1.5;
+			}
+			rand_ = not rand_;
 		}
 		else{
-			flowlet_path[flowlet_id] = path_table[dst_tor][2];
-			path_weight[dst_tor][2] *= 2;
+			printf("%f %f %f\n", path_weight[dst_tor][0], path_weight[dst_tor][1], path_weight[dst_tor][2]);
+			if((path_util[dst_tor][2]+1)/(path_util[dst_tor][1]+1) > 100){
+				flowlet_path[flowlet_id] = path_table[dst_tor][1];
+				path_weight[dst_tor][1] *= 1.5;
+			}
+			else if((path_util[dst_tor][2]+1)/(path_util[dst_tor][0]+1) > 100){
+				flowlet_path[flowlet_id] = path_table[dst_tor][0];
+				path_weight[dst_tor][0] *= 1.5;
+			}
+			else{
+				flowlet_path[flowlet_id] = path_table[dst_tor][2];
+				path_weight[dst_tor][2] *= 1.5;
+			}
 		}
 	}
 }
